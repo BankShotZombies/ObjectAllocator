@@ -77,9 +77,29 @@ void ObjectAllocator::Free(void *Object)
 {
     GenericObject* freedObject = reinterpret_cast<GenericObject*>(Object);
 
-    PushFront(&FreeList_, freedObject);
+    if(config.DebugOn_)
+    {
+        // If the client is trying to double free
+        if(IsObjectInList(FreeList_, freedObject))
+        {
+            // Throw a double free exception
+            throw OAException(OAException::E_MULTIPLE_FREE, "FreeObject: Object has already been freed.");
+        }
+
+        // Get the location of where the first block would be
+        uintptr_t firstBlockLocation = reinterpret_cast<uintptr_t>(PageList_) + sizeof(GenericObject*);
+
+        // If the client is trying to free an invalid pointer (a pointer not on a boundary)
+        if((reinterpret_cast<uintptr_t>(freedObject) - firstBlockLocation) % stats.ObjectSize_ != 0)
+        {
+            // Throw a bad boundary exception
+            throw OAException(OAException::E_BAD_BOUNDARY, "validate_object: Object not on a boundary.");
+        }
+    }
 
     memset(freedObject, FREED_PATTERN, stats.ObjectSize_);
+
+    PushFront(&FreeList_, freedObject);
 
     stats.FreeObjects_++;
     stats.Deallocations_++;
@@ -206,4 +226,19 @@ void ObjectAllocator::PrintList(GenericObject* list)
     }
 
     std::cout << std::endl;
+}
+
+bool ObjectAllocator::IsObjectInList(GenericObject* list, GenericObject* object)
+{
+    while(list != nullptr)
+    {
+        if(list == object)
+        {
+            return true;
+        }
+
+        list = list->Next;
+    }
+
+    return false;
 }

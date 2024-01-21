@@ -276,6 +276,8 @@ class ObjectAllocator
 
     void PrintList(GenericObject* list);
 
+    bool IsObjectInList(GenericObject* list, GenericObject* object);
+
   private:
       // Some "suggested" members (only a suggestion!)
     GenericObject *PageList_; //!< the beginning of the list of pages

@@ -1,4 +1,4 @@
-/// I (Adam Lonstein) did not write this drivers! This was created by the school (I think Professor Mead).
+/// I (Adam Lonstein) did not write this driver! This was created by the school (I think Professor Mead).
 
 #include <iostream> 
 #include <cstdio>
@@ -1238,7 +1238,7 @@ void DoEmployees()
   {
     cout << "Unexpected exception thrown from Free in DoEmployees."  << endl;
   }
-
+  
     // Free an object twice
   try {
     employeeObjectMgr->Free(pEmployee1);
