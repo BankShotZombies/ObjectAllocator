@@ -1238,7 +1238,7 @@ void DoEmployees()
   {
     cout << "Unexpected exception thrown from Free in DoEmployees."  << endl;
   }
-  
+
     // Free an object twice
   try {
     employeeObjectMgr->Free(pEmployee1);

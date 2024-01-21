@@ -286,6 +286,9 @@ class ObjectAllocator
     // Lots of other private stuff...     
     OAConfig config;
     OAStats stats;
+
+    // this is the full size of each data block, including object size, padding size * 2 (one for each side), and header block size 
+    size_t FullBlockSize;
 };
 
 #endif
