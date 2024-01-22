@@ -99,6 +99,18 @@ void ObjectAllocator::Free(void *Object)
             // Throw a bad boundary exception
             throw OAException(OAException::E_BAD_BOUNDARY, "validate_object: Object not on a boundary.");
         }
+
+        
+        if(config.PadBytes_ > 0)
+        {
+            // Get the location of the left padding (the comparison with PAD_PATTERN only works if this is also a const unsigned char*)
+            const unsigned char* paddingLocation = static_cast<const unsigned char*>( Object ) - config.PadBytes_;
+            CheckForPaddingCorruption(paddingLocation);
+
+            // Get the location of the right padding (the comparison with PAD_PATTERN only works if this is also a const unsigned char*)
+            paddingLocation = static_cast<const unsigned char*>( Object ) + stats.ObjectSize_;
+            CheckForPaddingCorruption(paddingLocation);
+        }
     }
 
     AssignHeaderBlockValues(freedObject, false);
@@ -419,5 +431,25 @@ void ObjectAllocator::AssignHeaderBlockValues(char* object, bool alloc, const ch
 
             externalHeaderBlock = nullptr;
         }
+    }
+}
+
+/**
+ * @brief Checks for corruption at a given padding location. In other words, checks if the pad bytes have been changed.
+ * 
+ * @param paddingLocation - the padding location to check corruption on. this must be a const unsigned char* for the comparson with PAD_PATTERN to work.
+ */
+void ObjectAllocator::CheckForPaddingCorruption(const unsigned char* paddingLocation)
+{
+    // Go through each pad byte and check if it has been changed
+    for (unsigned int i = 0; i < config.PadBytes_; i++)
+    {
+        // If it has been changed, throw a corruption exception
+        if(*paddingLocation != PAD_PATTERN)
+        {
+            throw OAException(OAException::E_CORRUPTED_BLOCK, "FreeObject: Object block has been corrupted.");
+        }
+
+        ++paddingLocation;
     }
 }

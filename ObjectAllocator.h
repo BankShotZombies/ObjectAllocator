@@ -284,6 +284,8 @@ class ObjectAllocator
 
     void AssignHeaderBlockValues(char* block, bool alloc, const char* label = "");
 
+    void CheckForPaddingCorruption(const unsigned char* paddingLocation);
+
   private:
       // Some "suggested" members (only a suggestion!)
     GenericObject *PageList_; //!< the beginning of the list of pages
