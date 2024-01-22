@@ -271,12 +271,16 @@ class ObjectAllocator
 
   private:
     void PushFront(GenericObject** head, GenericObject* newNode);
+    void PushFront(GenericObject** head, char* newNode);
 
     void AllocatePage();
 
     void PrintList(GenericObject* list);
 
     bool IsObjectInList(GenericObject* list, GenericObject* object);
+    bool IsObjectInList(GenericObject* list, char* object);
+
+    char* ObjectPageLocation(char* Object);
 
   private:
       // Some "suggested" members (only a suggestion!)
