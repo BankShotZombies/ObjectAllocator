@@ -282,6 +282,8 @@ class ObjectAllocator
 
     char* ObjectPageLocation(char* Object);
 
+    void AssignHeaderBlockValues(char* block, bool alloc, const char* label = "");
+
   private:
       // Some "suggested" members (only a suggestion!)
     GenericObject *PageList_; //!< the beginning of the list of pages

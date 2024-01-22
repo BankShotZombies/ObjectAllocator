@@ -57,15 +57,17 @@ void* ObjectAllocator::Allocate(const char *label)
         }
     }
 
-    GenericObject* availableBlock = FreeList_;
+    stats.FreeObjects_--;
+    stats.Allocations_++;
+    stats.ObjectsInUse_++;
+
+    char* availableBlock = reinterpret_cast<char*>( FreeList_ );
+
+    AssignHeaderBlockValues(availableBlock, true, label);
 
     FreeList_ = FreeList_->Next;
 
     memset(availableBlock, ALLOCATED_PATTERN, stats.ObjectSize_);
-
-    stats.FreeObjects_--;
-    stats.Allocations_++;
-    stats.ObjectsInUse_++;
 
     if(stats.Allocations_ > stats.MostObjects_)
     {
@@ -89,7 +91,7 @@ void ObjectAllocator::Free(void *Object)
         }
 
         // Get the location of where the first block would be
-        char* firstBlockLocation = ObjectPageLocation(freedObject) + config.PadBytes_ + sizeof(GenericObject*);
+        char* firstBlockLocation = ObjectPageLocation(freedObject) + config.HBlockInfo_.size_ + config.PadBytes_ + sizeof(GenericObject*);
 
         // If the client is trying to free an invalid pointer (a pointer not on a boundary)
         if((freedObject - firstBlockLocation) % FullBlockSize != 0)
@@ -98,6 +100,8 @@ void ObjectAllocator::Free(void *Object)
             throw OAException(OAException::E_BAD_BOUNDARY, "validate_object: Object not on a boundary.");
         }
     }
+
+    AssignHeaderBlockValues(freedObject, false);
 
     memset(freedObject, FREED_PATTERN, stats.ObjectSize_);
 
@@ -202,8 +206,17 @@ void ObjectAllocator::AllocatePage()
         throw OAException(OAException::E_NO_MEMORY, "allocate_new_page: No system memory available.");
     }
 
+    if(config.HBlockInfo_.type_ == config.hbExternal)
+    {
+        // Location of the header block
+        char* hbLocation = newPage + sizeof(GenericObject*);
+        // Set header block values to 0
+        memset(hbLocation, 0, config.HBlockInfo_.size_);
+    }
+    
+
     // Add pad bytes for the start of the first block
-    char* paddingLocation = newPage + sizeof(GenericObject*);
+    char* paddingLocation = newPage + config.HBlockInfo_.size_ + sizeof(GenericObject*);
     memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
 
     PushFront(&PageList_, newPage);
@@ -212,7 +225,7 @@ void ObjectAllocator::AllocatePage()
     stats.FreeObjects_ += config.ObjectsPerPage_;
 
     // Set the first block one PageList forward
-    char* block = reinterpret_cast<char*>(PageList_) + config.PadBytes_ + sizeof(GenericObject*);
+    char* block = paddingLocation + config.PadBytes_;
 
     //paddingLocation = reinterpret_cast<GenericObject*>(reinterpret_cast<uintptr_t>(block) + sizeof(GenericObject*));
 
@@ -233,8 +246,16 @@ void ObjectAllocator::AllocatePage()
 
     for(unsigned int i = 0; i < config.ObjectsPerPage_ - 1; ++i)
     {
+        if(config.HBlockInfo_.type_ == config.hbExternal)
+        {
+            // Location of the header block
+            char* hbLocation = paddingLocation + config.PadBytes_;
+            // Set header block values to 0
+            memset(hbLocation, 0, config.HBlockInfo_.size_);
+        }
+
         // Set padding at the beginning of the data block
-        paddingLocation = paddingLocation + config.PadBytes_;
+        paddingLocation = paddingLocation + config.PadBytes_ + config.HBlockInfo_.size_;
         memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
 
         // Set the data block
@@ -324,4 +345,79 @@ char* ObjectAllocator::ObjectPageLocation(char* Object)
     }
 
     return nullptr;
+}
+
+/**
+ * @brief Assigns the values to the header block of the given object depending on the header block type.
+ * 
+ * @param object - the object to assign the header block values to
+ * @param alloc - if true, it's allocating so will set/increase values. if false, it's freeing so will clear all values.
+ * @param label - the label of the header block. this will only have a value if it's an external header block.
+ */
+void ObjectAllocator::AssignHeaderBlockValues(char* object, bool alloc, const char* label)
+{
+    if(config.HBlockInfo_.type_ == config.hbNone)
+        return;
+
+    if(config.HBlockInfo_.type_ == config.hbBasic || config.HBlockInfo_.type_ == config.hbExtended)
+    {
+        // Get the location of the header block flag byte
+        char* flag = object - config.PadBytes_ - 1;
+        // Set the flag if allocating, clear it if freeing
+        alloc ? (*flag) |= 1 : (*flag) &= ~1;
+
+        // Get the location of the header block 4-byte alloc#
+        char* allocNum = flag - 4;
+        // Set the 4-byte alloc# if allocating, clear it if freeing
+        (*reinterpret_cast<unsigned int*>(allocNum)) = alloc ? stats.Allocations_ : 0;
+        
+        if(config.HBlockInfo_.type_ == config.hbExtended)
+        {
+            // Get the location of the extended header block 2-byte reuse number
+            char* reuseNum = allocNum - 2;
+
+            // Increase the reuse number if allocating
+            if(alloc)
+                (*reinterpret_cast<unsigned short*>(reuseNum))++;
+        }
+    }
+    else if(config.HBlockInfo_.type_ == config.hbExternal)
+    {
+        // Get the location of the external header block structure
+        MemBlockInfo **externalHeaderBlock = reinterpret_cast<MemBlockInfo **>(object - config.PadBytes_ - config.HBlockInfo_.size_);
+
+        if(alloc)
+        {
+            try
+            {
+                // Allocate the external header block
+                (*externalHeaderBlock) = new MemBlockInfo;
+            }
+            catch(const std::bad_alloc& e)
+            {
+                throw OAException(OAException::E_NO_MEMORY, "assign_header_block: No system memory available.");
+            }
+
+            // Allocate memory for the label
+            (*externalHeaderBlock)->label = new char[strlen(label) + 1];
+
+            // Set the header block values
+            (*externalHeaderBlock)->alloc_num = stats.Allocations_;
+            (*externalHeaderBlock)->in_use = true;
+
+            // Copy the label
+            strncpy((*externalHeaderBlock)->label, label, strlen(label) + 1);
+        }
+        else
+        {
+            // Free the label and structure
+            delete [] (*externalHeaderBlock)->label;
+            delete (*externalHeaderBlock);
+
+            // Set the header values to 0
+            memset((*externalHeaderBlock), 0, sizeof(MemBlockInfo));
+
+            externalHeaderBlock = nullptr;
+        }
+    }
 }
