@@ -25,6 +25,9 @@ ObjectAllocator::ObjectAllocator(size_t ObjectSize, const OAConfig& config)
     FullBlockSize = ObjectSize + config.PadBytes_ * 2 + config.HBlockInfo_.size_;
     stats.PageSize_ = FullBlockSize * config.ObjectsPerPage_ + sizeof(GenericObject*); // Set the page size
 
+    if(config.UseCPPMemManager_)
+        return;
+
     stats.FreeObjects_ = 0;
 
     AllocatePage();
@@ -32,12 +35,25 @@ ObjectAllocator::ObjectAllocator(size_t ObjectSize, const OAConfig& config)
 
 ObjectAllocator::~ObjectAllocator()
 {
-    
+    // while (PageList_)
+    // {
+    //     if(config.HBlockInfo_.type_ == config.hbExternal)
+    //     {
+            
+    //     }
+
+    //     GenericObject *temp = PageList_->Next;
+    //     delete [] reinterpret_cast<char *>(PageList_);
+    //     PageList_ = temp;
+    // }
 }
 
 void* ObjectAllocator::Allocate(const char *label)
 {
-    UNUSED(label);
+    if(config.UseCPPMemManager_)
+    {
+        return AllocateWithCPPManager();
+    }
 
     // If we are out of free objects
     if(stats.FreeObjects_ <= 0)
@@ -79,7 +95,18 @@ void* ObjectAllocator::Allocate(const char *label)
 
 void ObjectAllocator::Free(void *Object)
 {
+
     char* freedObject = reinterpret_cast<char*>(Object);
+
+    if(config.UseCPPMemManager_)
+    {
+        stats.Deallocations_++;
+        stats.ObjectsInUse_--;
+
+        delete [] freedObject;
+
+        return;
+    }
 
     if(config.DebugOn_)
     {
@@ -172,21 +199,6 @@ OAStats ObjectAllocator::GetStats() const
 }
 
 // ---------- Private methods -------------
-
-void ObjectAllocator::PushFront(GenericObject** head, GenericObject* newNode)
-{
-    if((*head) == nullptr)
-    {
-        newNode->Next = nullptr;
-        (*head) = newNode;
-    }
-    else
-    {
-        newNode->Next = (*head);
-
-        (*head) = newNode;
-    }
-}
 
 void ObjectAllocator::PushFront(GenericObject** head, char* newNode)
 {
@@ -304,21 +316,6 @@ void ObjectAllocator::PrintList(GenericObject* list)
     std::cout << std::endl;
 }
 
-bool ObjectAllocator::IsObjectInList(GenericObject* list, GenericObject* object)
-{
-    while(list != nullptr)
-    {
-        if(list == object)
-        {
-            return true;
-        }
-
-        list = list->Next;
-    }
-
-    return false;
-}
-
 bool ObjectAllocator::IsObjectInList(GenericObject* list, char* object)
 {
     while(list != nullptr)
@@ -410,8 +407,15 @@ void ObjectAllocator::AssignHeaderBlockValues(char* object, bool alloc, const ch
                 throw OAException(OAException::E_NO_MEMORY, "assign_header_block: No system memory available.");
             }
 
-            // Allocate memory for the label
-            (*externalHeaderBlock)->label = new char[strlen(label) + 1];
+            try
+            {
+                // Allocate memory for the label
+                (*externalHeaderBlock)->label = new char[strlen(label) + 1];
+            }
+            catch(const std::exception& e)
+            {
+                throw OAException(OAException::E_NO_MEMORY, "assign_header_block: No system memory available.");
+            }
 
             // Set the header block values
             (*externalHeaderBlock)->alloc_num = stats.Allocations_;
@@ -426,10 +430,7 @@ void ObjectAllocator::AssignHeaderBlockValues(char* object, bool alloc, const ch
             delete [] (*externalHeaderBlock)->label;
             delete (*externalHeaderBlock);
 
-            // Set the header values to 0
-            memset((*externalHeaderBlock), 0, sizeof(MemBlockInfo));
-
-            externalHeaderBlock = nullptr;
+            (*externalHeaderBlock) = nullptr;
         }
     }
 }
@@ -452,4 +453,28 @@ void ObjectAllocator::CheckForPaddingCorruption(const unsigned char* paddingLoca
 
         ++paddingLocation;
     }
+}
+
+char* ObjectAllocator::AllocateWithCPPManager()
+{
+    stats.Allocations_++;
+    stats.ObjectsInUse_++;
+
+    if(stats.Allocations_ > stats.MostObjects_)
+    {
+        stats.MostObjects_ = stats.Allocations_;
+    }
+
+    char* cppAllocation;
+
+    try
+    {
+        cppAllocation = new char[stats.ObjectSize_];
+    }
+    catch(const std::bad_alloc& e)
+    {
+        throw OAException(OAException::E_NO_MEMORY, "allocate_cpp_manager: No system memory available.");
+    }
+
+    return cppAllocation;
 }

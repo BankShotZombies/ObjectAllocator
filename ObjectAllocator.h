@@ -270,14 +270,12 @@ class ObjectAllocator
     ObjectAllocator &operator=(const ObjectAllocator &oa) = delete; //!< Do not implement!
 
   private:
-    void PushFront(GenericObject** head, GenericObject* newNode);
     void PushFront(GenericObject** head, char* newNode);
 
     void AllocatePage();
 
     void PrintList(GenericObject* list);
 
-    bool IsObjectInList(GenericObject* list, GenericObject* object);
     bool IsObjectInList(GenericObject* list, char* object);
 
     char* ObjectPageLocation(char* Object);
@@ -285,6 +283,8 @@ class ObjectAllocator
     void AssignHeaderBlockValues(char* block, bool alloc, const char* label = "");
 
     void CheckForPaddingCorruption(const unsigned char* paddingLocation);
+
+    char* AllocateWithCPPManager();
 
   private:
       // Some "suggested" members (only a suggestion!)
