@@ -78,12 +78,11 @@ void* ObjectAllocator::Allocate(const char *label)
     stats.ObjectsInUse_++;
 
     char* availableBlock = reinterpret_cast<char*>( FreeList_ );
-
     AssignHeaderBlockValues(availableBlock, true, label);
 
     FreeList_ = FreeList_->Next;
 
-    memset(availableBlock, ALLOCATED_PATTERN, stats.ObjectSize_);
+    memset(availableBlock, ALLOCATED_PATTERN, stats.ObjectSize_); 
 
     if(stats.Allocations_ > stats.MostObjects_)
     {
@@ -140,9 +139,11 @@ void ObjectAllocator::Free(void *Object)
         }
     }
 
+
     AssignHeaderBlockValues(freedObject, false);
 
     memset(freedObject, FREED_PATTERN, stats.ObjectSize_);
+
 
     PushFront(&FreeList_, freedObject);
 
@@ -153,8 +154,46 @@ void ObjectAllocator::Free(void *Object)
 
 unsigned ObjectAllocator::DumpMemoryInUse(DUMPCALLBACK fn) const
 {
-    UNUSED(fn);
-    return 0;
+    // This will walk the pages
+    GenericObject* pageWalker = PageList_;
+
+    // This will go along the pages block to block
+    char* allocatedBlock = reinterpret_cast<char*>(PageList_);
+
+    // Go to the first block
+    allocatedBlock += sizeof(GenericObject*) + config.HBlockInfo_.size_ + config.PadBytes_;
+
+    // As long as we still have pages
+    while(pageWalker != nullptr)
+    {
+        // As long as we are still in the page
+        while(allocatedBlock < reinterpret_cast<char*>(pageWalker) + stats.PageSize_)
+        {
+            if(IsObjectInList(FreeList_, allocatedBlock))
+            {
+                // If the object is in the free list, it is not allocated so just skip over it
+                allocatedBlock += stats.ObjectSize_ + config.HBlockInfo_.size_ + config.PadBytes_;
+
+                continue;
+            }
+
+            // Otherwise, call the callback for the block
+            fn(allocatedBlock, stats.ObjectSize_);
+
+            // Go to the next block
+            allocatedBlock += stats.ObjectSize_ + config.HBlockInfo_.size_ + config.PadBytes_;
+
+        }
+
+        // Go to the next page
+        pageWalker = pageWalker->Next;
+
+        // Set the block to the first block in the new page
+        allocatedBlock = reinterpret_cast<char*>(pageWalker);
+        allocatedBlock += sizeof(GenericObject*) + config.HBlockInfo_.size_ + config.PadBytes_;
+    }
+
+    return stats.ObjectsInUse_;
 }
 
 unsigned ObjectAllocator::ValidatePages(VALIDATECALLBACK fn) const
@@ -212,6 +251,7 @@ void ObjectAllocator::PushFront(GenericObject** head, char* newNode)
     else
     {
         node->Next = (*head);
+        //std::cout << "Allocated " << (*head)->Next;
 
         (*head) = node;
     }
@@ -316,7 +356,7 @@ void ObjectAllocator::PrintList(GenericObject* list)
     std::cout << std::endl;
 }
 
-bool ObjectAllocator::IsObjectInList(GenericObject* list, char* object)
+bool ObjectAllocator::IsObjectInList(GenericObject* list, char* object) const
 {
     while(list != nullptr)
     {

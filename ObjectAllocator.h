@@ -276,7 +276,7 @@ class ObjectAllocator
 
     void PrintList(GenericObject* list);
 
-    bool IsObjectInList(GenericObject* list, char* object);
+    bool IsObjectInList(GenericObject* list, char* object) const;
 
     char* ObjectPageLocation(char* Object);
 
