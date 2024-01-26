@@ -85,6 +85,13 @@ ObjectAllocator::~ObjectAllocator()
             externalHeaderBlock = reinterpret_cast<MemBlockInfo**>(block - config.PadBytes_ - config.HBlockInfo_.size_);
         }
     }
+
+    while (PageList_)
+    {
+        GenericObject *temp = PageList_->Next;
+        delete [] reinterpret_cast<char *>(PageList_);
+        PageList_ = temp;
+    }
 }
 
 void* ObjectAllocator::Allocate(const char *label)
@@ -121,7 +128,8 @@ void* ObjectAllocator::Allocate(const char *label)
 
     FreeList_ = FreeList_->Next;
 
-    memset(availableBlock, ALLOCATED_PATTERN, stats.ObjectSize_); 
+    if(config.DebugOn_)
+        memset(availableBlock, ALLOCATED_PATTERN, stats.ObjectSize_); 
 
     if(stats.Allocations_ > stats.MostObjects_)
     {
@@ -180,7 +188,8 @@ void ObjectAllocator::Free(void *Object)
 
     AssignHeaderBlockValues(freedObject, false);
 
-    memset(freedObject, FREED_PATTERN, stats.ObjectSize_);
+    if(config.DebugOn_)
+        memset(freedObject, FREED_PATTERN, stats.ObjectSize_);
 
     PushFront(&FreeList_, freedObject);
 
@@ -338,18 +347,17 @@ void ObjectAllocator::AllocatePage()
         throw OAException(OAException::E_NO_MEMORY, "allocate_new_page: No system memory available.");
     }
 
-    if(config.HBlockInfo_.type_ == config.hbExternal)
-    {
-        // Location of the header block
-        char* hbLocation = newPage + sizeof(GenericObject*);
-        // Set header block values to 0
-        memset(hbLocation, 0, config.HBlockInfo_.size_);
-    }
-    
+    // Location of the header block
+    char* hbLocation = newPage + sizeof(GenericObject*);
+    // Set header block values to 0
+    memset(hbLocation, 0, config.HBlockInfo_.size_);
 
-    // Add pad bytes for the start of the first block
     char* paddingLocation = newPage + config.HBlockInfo_.size_ + sizeof(GenericObject*);
-    memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
+    if(config.DebugOn_)
+    {
+        // Set pad pattern for the start of the first block
+        memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
+    }
 
     PushFront(&PageList_, newPage);
 
@@ -358,15 +366,18 @@ void ObjectAllocator::AllocatePage()
 
     // Set the first block one PageList forward
     char* block = paddingLocation + config.PadBytes_;
+    if(config.DebugOn_)
+    {
+        // Set the unallocated pattern the first block
+        memset(block, UNALLOCATED_PATTERN, stats.ObjectSize_);
+    }
 
-    //paddingLocation = reinterpret_cast<GenericObject*>(reinterpret_cast<uintptr_t>(block) + sizeof(GenericObject*));
-
-    // Set the unallocated pattern the first block
-    memset(block, UNALLOCATED_PATTERN, stats.ObjectSize_);
-
-    // Set the pad pattern for the end of the first block
     paddingLocation = block + stats.ObjectSize_;
-    memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
+    if(config.DebugOn_)
+    {
+        // Set pad pattern for the end of the first block
+        memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
+    }
 
     FreeList_ = reinterpret_cast<GenericObject*>(block);
     FreeList_->Next = nullptr;
@@ -378,25 +389,31 @@ void ObjectAllocator::AllocatePage()
 
     for(unsigned int i = 0; i < config.ObjectsPerPage_ - 1; ++i)
     {
-        if(config.HBlockInfo_.type_ == config.hbExternal)
+        // Location of the header block
+        char* hbLocation = paddingLocation + config.PadBytes_;
+        // Set header block values to 0
+        memset(hbLocation, 0, config.HBlockInfo_.size_);
+
+        paddingLocation = paddingLocation + config.PadBytes_ + config.HBlockInfo_.size_;
+        if(config.DebugOn_)
         {
-            // Location of the header block
-            char* hbLocation = paddingLocation + config.PadBytes_;
-            // Set header block values to 0
-            memset(hbLocation, 0, config.HBlockInfo_.size_);
+            // Set padding pattern for the beginning of the data block
+            memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
         }
 
-        // Set padding at the beginning of the data block
-        paddingLocation = paddingLocation + config.PadBytes_ + config.HBlockInfo_.size_;
-        memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
-
-        // Set the data block
         block = paddingLocation + config.PadBytes_;
-        memset(block, UNALLOCATED_PATTERN, stats.ObjectSize_);
+        if(config.DebugOn_)
+        {
+            // Set the pattern for the free data block
+            memset(block, UNALLOCATED_PATTERN, stats.ObjectSize_);
+        }
 
-        // Set padding at the end of the data block
         paddingLocation = block + stats.ObjectSize_;
-        memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
+        if(config.DebugOn_)
+        {
+            // Set padding pattern for the end of the data block
+            memset(paddingLocation, PAD_PATTERN, config.PadBytes_);
+        }
 
         // Add the data block to the free list
         PushFront(&FreeList_, block);
