@@ -35,17 +35,56 @@ ObjectAllocator::ObjectAllocator(size_t ObjectSize, const OAConfig& config)
 
 ObjectAllocator::~ObjectAllocator()
 {
-    // while (PageList_)
-    // {
-    //     if(config.HBlockInfo_.type_ == config.hbExternal)
-    //     {
-            
-    //     }
+    if(config.HBlockInfo_.type_ == OAConfig::hbExternal)
+    {
+        // This will walk the pages
+        GenericObject* pageWalker = PageList_;
 
-    //     GenericObject *temp = PageList_->Next;
-    //     delete [] reinterpret_cast<char *>(PageList_);
-    //     PageList_ = temp;
-    // }
+        // This will go along the pages block to block
+        char* block = reinterpret_cast<char*>(PageList_);
+
+        block += sizeof(GenericObject*) + config.HBlockInfo_.size_ + config.PadBytes_;
+
+        MemBlockInfo **externalHeaderBlock = reinterpret_cast<MemBlockInfo**>(block - config.PadBytes_ - config.HBlockInfo_.size_);
+
+        // As long as we still have pages
+        while(pageWalker != nullptr)
+        {
+            // As long as we are still in the page
+            while(block < reinterpret_cast<char*>(pageWalker) + stats.PageSize_)
+            {
+                if(IsObjectInList(FreeList_, block))
+                {
+                    // If the object is in the free list, it is not allocated so just skip over it
+                    block += stats.ObjectSize_ + config.HBlockInfo_.size_ + config.PadBytes_ * 2;
+
+                    continue;
+                }
+
+                // Free the label and structure
+                if((*externalHeaderBlock)->label != nullptr)
+                {
+                    delete [] (*externalHeaderBlock)->label;
+
+                    (*externalHeaderBlock)->label = nullptr;
+                }
+                
+                delete (*externalHeaderBlock);
+
+                (*externalHeaderBlock) = nullptr;
+
+                block += stats.ObjectSize_ + config.HBlockInfo_.size_ + config.PadBytes_ * 2;
+                externalHeaderBlock = reinterpret_cast<MemBlockInfo**>(block - config.PadBytes_ - config.HBlockInfo_.size_);
+            }
+
+            // Go to the next page
+            pageWalker = pageWalker->Next;
+
+            block = reinterpret_cast<char*>(pageWalker);
+            block += sizeof(GenericObject*) + config.HBlockInfo_.size_ + config.PadBytes_;
+            externalHeaderBlock = reinterpret_cast<MemBlockInfo**>(block - config.PadBytes_ - config.HBlockInfo_.size_);
+        }
+    }
 }
 
 void* ObjectAllocator::Allocate(const char *label)
@@ -143,7 +182,6 @@ void ObjectAllocator::Free(void *Object)
 
     memset(freedObject, FREED_PATTERN, stats.ObjectSize_);
 
-
     PushFront(&FreeList_, freedObject);
 
     stats.FreeObjects_++;
@@ -171,7 +209,7 @@ unsigned ObjectAllocator::DumpMemoryInUse(DUMPCALLBACK fn) const
             if(IsObjectInList(FreeList_, allocatedBlock))
             {
                 // If the object is in the free list, it is not allocated so just skip over it
-                allocatedBlock += stats.ObjectSize_ + config.HBlockInfo_.size_ + config.PadBytes_;
+                allocatedBlock += stats.ObjectSize_ + config.HBlockInfo_.size_ + config.PadBytes_ * 2;
 
                 continue;
             }
@@ -282,7 +320,6 @@ void ObjectAllocator::PushFront(GenericObject** head, char* newNode)
     else
     {
         node->Next = (*head);
-        //std::cout << "Allocated " << (*head)->Next;
 
         (*head) = node;
     }
@@ -464,7 +501,7 @@ void ObjectAllocator::AssignHeaderBlockValues(char* object, bool alloc, const ch
     else if(config.HBlockInfo_.type_ == config.hbExternal)
     {
         // Get the location of the external header block structure
-        MemBlockInfo **externalHeaderBlock = reinterpret_cast<MemBlockInfo **>(object - config.PadBytes_ - config.HBlockInfo_.size_);
+        MemBlockInfo **externalHeaderBlock = reinterpret_cast<MemBlockInfo**>(object - config.PadBytes_ - config.HBlockInfo_.size_);
 
         if(alloc)
         {
@@ -478,27 +515,40 @@ void ObjectAllocator::AssignHeaderBlockValues(char* object, bool alloc, const ch
                 throw OAException(OAException::E_NO_MEMORY, "assign_header_block: No system memory available.");
             }
 
-            try
+            if(label != nullptr)
             {
-                // Allocate memory for the label
-                (*externalHeaderBlock)->label = new char[strlen(label) + 1];
+                try
+                {
+                    // Allocate memory for the label
+                    (*externalHeaderBlock)->label = new char[strlen(label) + 1];
+                }
+                catch(const std::exception& e)
+                {
+                    throw OAException(OAException::E_NO_MEMORY, "assign_header_block: No system memory available.");
+                }
+                
+                // Copy the label
+                strncpy((*externalHeaderBlock)->label, label, strlen(label) + 1);
             }
-            catch(const std::exception& e)
+            else
             {
-                throw OAException(OAException::E_NO_MEMORY, "assign_header_block: No system memory available.");
+                (*externalHeaderBlock)->label = nullptr;
             }
 
             // Set the header block values
             (*externalHeaderBlock)->alloc_num = stats.Allocations_;
             (*externalHeaderBlock)->in_use = true;
-
-            // Copy the label
-            strncpy((*externalHeaderBlock)->label, label, strlen(label) + 1);
         }
         else
         {
             // Free the label and structure
-            delete [] (*externalHeaderBlock)->label;
+            if((*externalHeaderBlock)->label != nullptr)
+            {
+                delete [] (*externalHeaderBlock)->label;
+
+                (*externalHeaderBlock)->label = nullptr;
+            }
+            
             delete (*externalHeaderBlock);
 
             (*externalHeaderBlock) = nullptr;
