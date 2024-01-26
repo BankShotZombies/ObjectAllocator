@@ -130,12 +130,11 @@ void ObjectAllocator::Free(void *Object)
         if(config.PadBytes_ > 0)
         {
             // Get the location of the left padding (the comparison with PAD_PATTERN only works if this is also a const unsigned char*)
-            const unsigned char* paddingLocation = static_cast<const unsigned char*>( Object ) - config.PadBytes_;
-            CheckForPaddingCorruption(paddingLocation);
-
-            // Get the location of the right padding (the comparison with PAD_PATTERN only works if this is also a const unsigned char*)
-            paddingLocation = static_cast<const unsigned char*>( Object ) + stats.ObjectSize_;
-            CheckForPaddingCorruption(paddingLocation);
+            const unsigned char* block = static_cast<const unsigned char*>( Object );
+            if(CheckForPaddingCorruption(block))
+            {
+                throw OAException(OAException::E_CORRUPTED_BLOCK, "FreeObject: Object block has been corrupted.");
+            }
         }
     }
 
@@ -181,7 +180,7 @@ unsigned ObjectAllocator::DumpMemoryInUse(DUMPCALLBACK fn) const
             fn(allocatedBlock, stats.ObjectSize_);
 
             // Go to the next block
-            allocatedBlock += stats.ObjectSize_ + config.HBlockInfo_.size_ + config.PadBytes_;
+            allocatedBlock += stats.ObjectSize_ + config.HBlockInfo_.size_ + config.PadBytes_ * 2;
 
         }
 
@@ -198,8 +197,40 @@ unsigned ObjectAllocator::DumpMemoryInUse(DUMPCALLBACK fn) const
 
 unsigned ObjectAllocator::ValidatePages(VALIDATECALLBACK fn) const
 {
-    UNUSED(fn);
-    return 0;
+    int numCorruptions = 0;
+
+    // This will walk the pages
+    GenericObject* pageWalker = PageList_;
+
+    // This will go along the pages block to block
+    const unsigned char* block = reinterpret_cast<const unsigned char*>(PageList_);
+
+    block += sizeof(GenericObject*) + config.HBlockInfo_.size_ + config.PadBytes_;
+
+    // As long as we still have pages
+    while(pageWalker != nullptr)
+    {
+        // As long as we are still in the page
+        while(block < reinterpret_cast<unsigned char*>(pageWalker) + stats.PageSize_)
+        {
+            if(CheckForPaddingCorruption(block))
+            {
+                numCorruptions++;
+
+                fn(block, stats.ObjectSize_);
+            }
+
+            block += stats.ObjectSize_ + config.HBlockInfo_.size_ + config.PadBytes_ * 2;
+        }
+
+        // Go to the next page
+        pageWalker = pageWalker->Next;
+
+        block = reinterpret_cast<unsigned char*>(pageWalker);
+        block += sizeof(GenericObject*) + config.HBlockInfo_.size_ + config.PadBytes_;
+    }
+
+    return numCorruptions;
 }
 
 unsigned ObjectAllocator::FreeEmptyPages()
@@ -480,7 +511,7 @@ void ObjectAllocator::AssignHeaderBlockValues(char* object, bool alloc, const ch
  * 
  * @param paddingLocation - the padding location to check corruption on. this must be a const unsigned char* for the comparson with PAD_PATTERN to work.
  */
-void ObjectAllocator::CheckForPaddingCorruption(const unsigned char* paddingLocation)
+bool ObjectAllocator::CheckForPaddingCorruptionAtPadding(const unsigned char* paddingLocation) const
 {
     // Go through each pad byte and check if it has been changed
     for (unsigned int i = 0; i < config.PadBytes_; i++)
@@ -488,11 +519,32 @@ void ObjectAllocator::CheckForPaddingCorruption(const unsigned char* paddingLoca
         // If it has been changed, throw a corruption exception
         if(*paddingLocation != PAD_PATTERN)
         {
-            throw OAException(OAException::E_CORRUPTED_BLOCK, "FreeObject: Object block has been corrupted.");
+            return true;
         }
 
         ++paddingLocation;
     }
+
+    return false;
+}
+
+bool ObjectAllocator::CheckForPaddingCorruption(const unsigned char* object) const
+{
+    const unsigned char* leftPadding = object - config.PadBytes_;
+
+    if(CheckForPaddingCorruptionAtPadding(leftPadding))
+    {
+        return true;
+    }
+
+    const unsigned char* rightPadding = object + stats.ObjectSize_;
+
+    if(CheckForPaddingCorruptionAtPadding(rightPadding))
+    {
+        return true;
+    }
+
+    return false;
 }
 
 char* ObjectAllocator::AllocateWithCPPManager()

@@ -282,7 +282,9 @@ class ObjectAllocator
 
     void AssignHeaderBlockValues(char* block, bool alloc, const char* label = "");
 
-    void CheckForPaddingCorruption(const unsigned char* paddingLocation);
+    bool CheckForPaddingCorruptionAtPadding(const unsigned char* paddingLocation) const;
+
+    bool CheckForPaddingCorruption(const unsigned char* object) const;
 
     char* AllocateWithCPPManager();
 

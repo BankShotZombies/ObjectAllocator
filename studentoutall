@@ -522,7 +522,9 @@ XXXXXXXX
  BB BB BB BB BB BB BB EE EE EE EE EE EE DD DD 01 00 00 00 01 FF FF FF FF FF FF DD DD XX XX XX XX
  XX XX XX XX BB BB BB BB BB BB BB BB BB BB BB BB BB BB BB BB DD DD DD DD DD DD DD DD
 
-Number of corruptions: 0
+Block at 0x00000000, 24 bytes long.
+Block at 0x00000000, 24 bytes long.
+Number of corruptions: 2
 
 Pages in use: 2, Objects in use: 7, Available objects: 1, Allocs: 7, Frees: 0
 XXXXXXXX
@@ -543,7 +545,10 @@ XXXXXXXX
  BB BB BB BB BB BB BB EE EE EE EE EE EE DD DD 01 00 00 00 01 FF FF FF FF FF FF DD DD XX XX XX XX
  XX XX XX XX BB BB BB BB BB BB BB BB BB BB BB BB BB BB BB BB DD DD DD DD DD DD DD DD
 
-Number of corruptions: 0
+Block at 0x00000000, 24 bytes long.
+Block at 0x00000000, 24 bytes long.
+Block at 0x00000000, 24 bytes long.
+Number of corruptions: 3
 
 
 ============================== Test free checking basic (stress)...
