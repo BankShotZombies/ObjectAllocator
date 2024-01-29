@@ -1,7 +1,11 @@
 /**
  * @file ObjectAllocator.h
  * @author Adam Lonstein (adam.lonstein@digipen.com)
- * @brief This is a custom memory manager that can allocate and free memory blocks. It also can use padding bytes, header blocks, and more.
+ * @brief This is a custom memory manager that can allocate and free memory blocks. It also can use 
+ *        padding bytes, header blocks, check for double frees and corruption, and more. The Object 
+ *        Allocator (OA) works by creating pages which can hold a certain amount of objects with equal 
+ *        size. When these objects are free, they will be added to the free list. When allocated, they 
+ *        get removed from the free list and are sent to the client.
  * @date 01-20-2024
  */
 
@@ -270,22 +274,33 @@ class ObjectAllocator
     ObjectAllocator &operator=(const ObjectAllocator &oa) = delete; //!< Do not implement!
 
   private:
+    // Pushes a node to a list.
     void PushFront(GenericObject** head, char* newNode);
 
+    // Allocates a page and adds it to the page list.
     void AllocatePage();
 
-    void PrintList(GenericObject* list);
-
+    // Walks through the given list and check if one of its nodes is the given object.
     bool IsObjectInList(GenericObject* list, char* object) const;
 
+    // Walks the page list and returns the address of which page contains the given Object
     char* ObjectPageLocation(char* Object);
 
-    void AssignHeaderBlockValues(char* block, bool alloc, const char* label = "");
+    // Assigns the values to the header block of the given object depending on the header block type.
+    void AssignHeaderBlockValues(char* block, bool alloc, const char* label = "");\
+    // Allocates the external header.
+    void AllocateExternalHeaderBlock(MemBlockInfo** externalHeaderBlock, const char* label = "");
+    // Frees the external header block.
+    void FreeExternalHeaderBlock(MemBlockInfo** externalHeaderBlock);
 
-    bool CheckForPaddingCorruptionAtPadding(const unsigned char* paddingLocation) const;
+    // Checks if the given block is on a bad boundary. For example, if a block of memory starts at 
+    // 0x04 and the client is trying to free 0x05.
+    void CheckForBadBoundary(char* const block);
 
+    // Checks for corruption for an object. In other words, checks if the pad bytes have been changed.
     bool CheckForPaddingCorruption(const unsigned char* object) const;
 
+    // Makes an allocation with the CPP manager.
     char* AllocateWithCPPManager();
 
   private:
