@@ -1,6 +1,6 @@
 /**
  * @file ObjectAllocator.h
- * @author Adam Lonstein (adam.lonstein@digipen.com)
+ * @author Adam Lonstein (adamlonstein@gmail.com)
  * @brief This is a custom memory manager that can allocate and free memory blocks. It also can use 
  *        padding bytes, header blocks, check for double frees and corruption, and more. The Object 
  *        Allocator (OA) works by creating pages which can hold a certain amount of objects with equal 
